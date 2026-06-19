@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Myvita 이메일 인증</title>
+  <style>
+    :root { --accent: #34C759; --bg: #F2F2F7; --card: #FFFFFF; --text: #1C1C1E; --sub: #8E8E93; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      width: 100%;
+      max-width: 380px;
+      background: var(--card);
+      border-radius: 20px;
+      padding: 36px 28px;
+      text-align: center;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+    }
+    .badge {
+      width: 76px; height: 76px;
+      margin: 0 auto 20px;
+      border-radius: 50%;
+      background: rgba(52,199,89,0.12);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .badge svg { width: 40px; height: 40px; }
+    h1 { font-size: 22px; margin: 0 0 10px; font-weight: 700; }
+    p { font-size: 15px; line-height: 1.6; color: var(--sub); margin: 0 0 8px; }
+    .brand { margin-top: 28px; font-size: 13px; color: var(--sub); font-weight: 600; letter-spacing: 0.3px; }
+    .btn {
+      display: inline-block;
+      margin-top: 22px;
+      padding: 13px 22px;
+      border-radius: 12px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+    }
+    .hidden { display: none; }
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid rgba(52,199,89,0.25);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      margin: 8px auto 0;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #000000; --card: #1C1C1E; --text: #FFFFFF; --sub: #98989F; }
+      .card { box-shadow: none; border: 1px solid #2C2C2E; }
+    }
+  </style>
+</head>
+<body>
+  <!-- 1) 앱 열기 시도 중 (모바일) -->
+  <div class="card" id="opening">
+    <div class="badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+    </div>
+    <h1>이메일 인증 완료</h1>
+    <p>Myvita 앱을 여는 중입니다…</p>
+    <div class="spinner"></div>
+  </div>
+
+  <!-- 2) 앱이 안 열렸을 때 (PC 등) -->
+  <div class="card hidden" id="done">
+    <div class="badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+    </div>
+    <h1>이메일 인증이 완료되었습니다</h1>
+    <p>이제 Myvita 앱으로 돌아가 로그인해 주세요.</p>
+    <p>이 페이지는 닫으셔도 됩니다.</p>
+    <a class="btn" id="openBtn" href="#">앱에서 열기</a>
+    <div class="brand">Myvita · 건강 관리</div>
+  </div>
+
+  <script>
+    // 프로덕션 앱 딥링크 스킴 (app.config.js: prod 'healthapp')
+    var APP_SCHEME = 'healthapp';
+
+    // Supabase가 인증 후 이 페이지로 리다이렉트하며 토큰을 hash(#)나 query(?)로 전달.
+    // 그대로 앱 딥링크에 실어 보내 모바일에서 세션이 이어지게 한다.
+    var params = (window.location.hash || '') + (window.location.search || '');
+    var appUrl = APP_SCHEME + '://' + params;
+
+    var opening = document.getElementById('opening');
+    var done = document.getElementById('done');
+    var openBtn = document.getElementById('openBtn');
+    openBtn.setAttribute('href', appUrl);
+
+    function showDone() {
+      opening.classList.add('hidden');
+      done.classList.remove('hidden');
+    }
+
+    // 앱 열기 시도. 일정 시간 내 백그라운드로 전환되지 않으면(=앱 미설치/PC) 안내 화면.
+    var fellBack = false;
+    var startedAt = Date.now();
+
+    function tryOpenApp() {
+      try { window.location.href = appUrl; } catch (e) {}
+    }
+
+    // 탭이 숨겨지면 앱이 열린 것으로 보고 폴백 취소
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) fellBack = true;
+    });
+    window.addEventListener('pagehide', function () { fellBack = true; });
+
+    // 모바일에서만 자동 실행. 데스크톱은 바로 완료 안내.
+    var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      tryOpenApp();
+      setTimeout(function () {
+        // 1.5초 지났는데 여전히 보이는 화면이면 앱이 안 열린 것
+        if (!fellBack && Date.now() - startedAt >= 1400) showDone();
+      }, 1500);
+    } else {
+      showDone();
+    }
+
+    openBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      tryOpenApp();
+    });
+  </script>
+</body>
+</html>
